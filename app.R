@@ -66,7 +66,7 @@ init <- function(login, password, session_name, db) {
 ui <- fluidPage(
   useShinyjs(),
   tags$h4("UCSC download pdf page"),
-  tags$p("This tool allow you to extract all pdf associated with coordinates in BED file"),
+  tags$p("This tool allows you to extract all pdfs associated with coordinates in BED file"),
   # tags$a(href="link to github", "Sources of this tool"),
   textInput(inputId = "session", label = "Session name", value = ""),
   textInput(inputId = "login", label = "Login", value = ""),
