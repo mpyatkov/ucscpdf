@@ -12,10 +12,10 @@
 There are two options how you can use this tool:
 
 ** GUI options
-- open app.R using RStudio and use button "RunApp"
+- open app.R using RStudio and use button *RunApp*
 - create account in shinyapps.io and upload app.R as a usual shiny application
 ** CLI option
-- Use the script "ucsc_download_pdf.R" (fill in all parameters in the script's beginning and run script using RStudio or Rscript)
+- Use the script *ucsc_download_pdf.R* (fill in all parameters in the script's beginning and run script using RStudio or Rscript)
 
 * COMMENT Local vars :noexport:
    ;; Local Variables:
