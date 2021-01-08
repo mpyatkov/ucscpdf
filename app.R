@@ -62,10 +62,14 @@ init <- function(login, password, session_name, db) {
   list(session=session, main_url=main_url)
 }
 
-# UI part
+########### UI and server part
+
+key_available <- TRUE
+
 ui <- fluidPage(
   useShinyjs(),
   tags$h4("UCSC download pdf page"),
+  textOutput(outputId = "users"),
   tags$p("This tool allows you to extract all pdfs associated with coordinates in BED file"),
   # tags$a(href="link to github", "Sources of this tool"),
   textInput(inputId = "session", label = "Session name", value = ""),
@@ -73,15 +77,48 @@ ui <- fluidPage(
   passwordInput(inputId = "password", label= "Password",value = ""),
   textInput(inputId = "db", label = "Database", value = "mm9"),
   fileInput(inputId = "bedfile", label = "Bed file"),
-  actionButton(inputId = "go", label = "Download"),
+  actionButton(inputId = "go", label = "Extract pdfs"),
   downloadButton(outputId = "downloadData", "Download combined pdf")
 )
 
-
 # Server part
-server <- function(input, output) {
+server <- function(input, output, session) {
   
+  have_key <- FALSE
+  message <- ""
+  buttonMessage <- "Extract pdfs"
+  
+  # hide download pdf button
   shinyjs::toggle("downloadData")
+  
+  # disable extract pdf button by default
+  shinyjs::disable("go")
+  
+  # semaphore: when session ended release the key
+  onSessionEnded(function() key_available <<- TRUE)
+  
+  # check every 1 sec if key is available, and hold it if it is available
+  observe({
+    invalidateLater(1000)
+    
+    if(key_available){
+      key_available <<- FALSE
+      have_key <<- TRUE
+    }
+    if (!have_key) {
+      message <<- "Wait please. Another user is currently active"
+      buttonMessage <<- "Wait please..."
+      shinyjs::disable("go")
+    } else {
+      shinyjs::enable("go")
+      message <<- ""
+      buttonMessage <<- "Extract pdf"
+    }
+    output$users <- renderText(message)
+    updateActionButton(session, inputId = "go", label = buttonMessage)
+  })
+  
+  
   
   observeEvent(input$go,{
     
