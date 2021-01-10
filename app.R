@@ -66,7 +66,16 @@ init <- function(login, password, session_name, db) {
 
 key_available <- TRUE
 
+
 ui <- fluidPage(
+  
+  tags$head(
+    tags$style(HTML("
+      #users {
+         color: red;
+      }
+   "))),
+  
   useShinyjs(),
   tags$h4("UCSC download pdf page"),
   textOutput(outputId = "users"),
