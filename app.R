@@ -29,10 +29,10 @@ download_pdf <- function(session, url, outname) {
 read_bed <- function(bedfile_path, pdfdir){
   # read BED file
   bed <- read_tsv(bedfile_path, col_names = F) %>% 
-    select(chr=X1, start=X2, end=X3, label=X4) %>% 
+    select(chr=X1, start=X2, end=X3) %>% 
     rowwise() %>% 
     mutate(coords = paste0(chr,":",start,"-",end),
-           outname = paste0(pdfdir,paste(label, chr, start, end, sep = "_", collapse = ""), ".pdf")) %>% 
+           outname = paste0(pdfdir,paste(chr, start, end, sep = "_", collapse = ""), ".pdf")) %>% 
     select(coords, outname)
   bed
 }
