@@ -189,6 +189,7 @@ ui <- fluidPage(
                 "10X" = "10",
                 "100X" = "100")),
   checkboxInput(inputId = "need_annotations", "Include additional columns from xls/bed files to the pdf", value = TRUE),
+  tags$a("example of input file",href="example.xlsx"),
   fileInput(inputId = "bedfile", label = "bed (without header) / xlsx (with header!) files", multiple = TRUE),
   actionButton(inputId = "go", label = "Extract pdfs"),
   downloadButton(outputId = "downloadData", "Download zip archive")
@@ -322,4 +323,3 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui = ui, server = server)
-
