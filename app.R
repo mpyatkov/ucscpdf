@@ -1,9 +1,8 @@
-library(tidyverse)
 library(httr)
 library(rvest)
 library(shiny)
 library(shinyjs)
-library(staplr)
+library(qpdf)
 library(readxl)
 library(tools)
 library(ggpubr)
@@ -11,25 +10,35 @@ library(ggplot2)
 library(gridExtra)
 library(grid)
 library(cowplot)
+library(stringr)
+library(purrr)
+library(dplyr)
+
+## check dependecies for packages
+# packrat:::recursivePackageDependencies("ggpubr", ignore = "", lib.loc = .libPaths()[1])
+# rsconnect::appDependencies(appDir= "/projectnb/wax-dk/max/src/ucscpdf/")
 
 # download_pdf function
 # example: download_pdf("chr1:176696608-176697356", "test.pdf")
 download_pdf <- function(session, url, outname) {
   
   # receive pdf link
-  pdf_link <- jump_to(session, url) %>% 
+  pdflink <- session %>% 
+    session_jump_to(url) %>% 
     read_html() %>%
     html_nodes("#pdfLink") %>%
-    html_attr("href") %>%
-    str_replace(., "..", "https://genome.ucsc.edu/") %>% 
-    jump_to(session, .) %>% 
-    read_html() %>%
-    html_node(xpath = "/html/body/div[4]/ul[1]/li[1]/a") %>%
+    html_attr("href") %>% 
+    str_replace(., "..", "https://genome.ucsc.edu/")
+  
+  final_pdf_link <- session %>% 
+    session_jump_to(pdflink) %>% 
+    read_html() %>% 
+    html_node(xpath = "/html/body/div[5]/ul[1]/li[1]/a") %>% 
     html_attr("href") %>%
     str_replace(., "..", "https://genome.ucsc.edu")
   
   # pdf_link
-  download.file(pdf_link, destfile = outname)
+  download.file(final_pdf_link, destfile = outname)
 }
 
 ## returns new (zoomed) coordinates of fragment
@@ -83,7 +92,6 @@ export_table_as_pdf <- function(file_path, outdir, add_annotations = TRUE){
   dlist <- split(file_data,r)
   
   map(dlist, function(chunk_table){
-    print(chunk_table)
     cowplot::plot_grid(ggtexttable(chunk_table, rows = NULL, theme = ttheme("minimal", base_size = 8)))
   }) %>% 
     marrangeGrob(nrow =1, ncol=1) %>% 
@@ -122,18 +130,6 @@ read_data <- function(file_path, pdfdir, zoom){
   file_data
 }
 
-# # read bed file, add coords and output name
-# read_bed <- function(bedfile_path, pdfdir, zoom){
-#   # read BED file
-#   bed <- read_tsv(bedfile_path, col_names = F) %>% 
-#     select(chr=X1, start=X2, end=X3) %>% 
-#     rowwise() %>% 
-#     mutate(coords = paste0(chr,":",start,"-",end),
-#            outname = paste0(pdfdir,paste(chr, start, end, sep = "_", collapse = ""), ".pdf")) %>% 
-#     select(coords, outname)
-#   bed
-# }
-
 # initialize session
 init <- function(login, password, session_name, db) {
 
@@ -146,16 +142,21 @@ init <- function(login, password, session_name, db) {
   loginUrl <- "https://genome.ucsc.edu/cgi-bin/hgLogin?hgLogin.do.displayLoginPage=1"
 
   # create session
-  session <- html_session(loginUrl)
+  session <- session(loginUrl)
+  
+  params_list <- list(
+    hgLogin_userName = login, 
+    hgLogin_password = password
+  )
   
   # login to the UCSC server
   form <- html_form(session)[[1]] %>% 
-    set_values(., hgLogin_userName = login, hgLogin_password = password) %>% 
-    submit_form(session, .)
-  
+    html_form_set(!!!params_list) %>%                             
+    session_submit(session, form = .,submit = "hgLogin.do.displayLogin")
+
   # go to main screen with all sessions 
-  tmp <- jump_to(session, URLencode(sessionUrl))
-  
+  tmp <- session %>% session_jump_to(URLencode(sessionUrl))
+
   list(session=session, main_url=main_url)
 }
 
@@ -183,9 +184,8 @@ ui <- fluidPage(
   textInput(inputId = "session", label = "Session name", value = ""),
   textInput(inputId = "db", label = "Database", value = "mm9"),
   selectInput("zoom", "Zoom out:",
-              c("No zoom" = "1",
+              c("3X" = "3",
                 "1.5X" = "1.5",
-                "3X" = "3",
                 "10X" = "10",
                 "100X" = "100")),
   checkboxInput(inputId = "need_annotations", "Include additional columns from xls/bed files to the pdf", value = TRUE),
@@ -260,7 +260,8 @@ server <- function(input, output, session) {
       if (!dir.exists(pdfdir)) {
         dir.create(pdfdir)  
       }
-      
+      pdfdir <- normalizePath(pdfdir)
+
       # create name for combined pdf ex. tmp111111_combined.pdf
       combined_name <- str_c(file_path_sans_ext(name),"_ucsc.pdf")
       
@@ -273,7 +274,7 @@ server <- function(input, output, session) {
         
         setProgress(detail = "Init session")
         # init session
-        init_params <- init(input$login, input$password, input$session, input$db)
+        init_params <- init(input$login, input$password, str_trim(input$session), input$db)
         
         # Number of times we'll go through the loop
         n <- nrow(bed)
@@ -288,8 +289,9 @@ server <- function(input, output, session) {
         setProgress(detail = "Combine pdf files to one")
         
         # combine all files
-        staplr::staple_pdf(input_directory = pdfdir, output_filepath = combined_name)  
-        
+        pdffiles <- sort(list.files(pdfdir, pattern = "pdf", full.names = T))
+        qpdf::pdf_combine(input = pdffiles, output = combined_name)
+
         # remove tmp* directory with pdf files
         unlink(pdfdir, recursive = TRUE)
         
@@ -311,7 +313,7 @@ server <- function(input, output, session) {
     # show link for combined pdf download
     shinyjs::show("downloadData")
     shinyjs::toggle("go")
-
+    gc()
     # create link
     output$downloadData <- downloadHandler(
       filename = zip_name,
@@ -323,3 +325,4 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui = ui, server = server)
+
