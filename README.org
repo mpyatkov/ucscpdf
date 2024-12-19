@@ -8,6 +8,7 @@
 
 * UCSC pdf downloader
 
+This tool enables the creation of screenshots from UCSC Browser sessions at specific coordinates. Users must provide .BED or .XLSX files containing genomic regions of interest and session information. The script then automatically downloads all screenshots in .PDF format.
 
 [[file:screenshot/screenshot.png]]
 
@@ -19,10 +20,9 @@
 
 ** Acknowledgements
 
-*Created by:* Maxim Pyatkov, laboratory of David Waxman, Dept. of Biology, Boston University
+Created by: Maxim Pyatkov, laboratory of David Waxman, Dept. of Biology, Boston University
 
-*Grant support:* Development of this script was carried out in the laboratory of David J Waxman, Boston University, supported in part by NIH grants R01-DK121998 (Growth Hormone Regulation of Sex Differences in Liver Metabolism) and R01-ES024421 (Epigenetic Actions of Environmental Chemicals) to DJW.
-
+Grant support: Development of this script was carried out in the laboratory of David J Waxman, Boston University, supported in part by NIH grants R01-DK121998 (Growth Hormone Regulation of Sex Differences in Liver Metabolism) and R01-ES024421 (Epigenetic Actions of Environmental Chemicals) to DJW.
 
 * COMMENT Local vars :noexport:
    ;; Local Variables:
