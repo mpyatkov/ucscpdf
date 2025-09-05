@@ -13,6 +13,7 @@ library(cowplot)
 library(stringr)
 library(purrr)
 library(dplyr)
+library(readr)
 
 ## check dependecies for packages
 # packrat:::recursivePackageDependencies("ggpubr", ignore = "", lib.loc = .libPaths()[1])
@@ -54,7 +55,7 @@ calculate_zoom_factor <- function(start, end, zoom){
 }
 
 ## read and save bed/xls as table
-export_table_as_pdf <- function(file_path, outdir, add_annotations = TRUE){
+export_table_as_pdf <- function(file_path, outdir, title_text = "", add_annotations = TRUE){
   ## for bed file without colnames
   ## for xlsx should be header provided
 
@@ -92,7 +93,11 @@ export_table_as_pdf <- function(file_path, outdir, add_annotations = TRUE){
   dlist <- split(file_data,r)
   
   map(dlist, function(chunk_table){
-    cowplot::plot_grid(ggtexttable(chunk_table, rows = NULL, theme = ttheme("minimal", base_size = 8)))
+    
+    tab <- ggtexttable(chunk_table, rows = NULL, 
+                       theme = ttheme(base_size = 8,padding = unit(c(15, 3), "mm"))) %>% 
+      tab_add_title(text = title_text, face = "bold", size = 8, padding = unit(1, "line"))
+    cowplot::plot_grid(tab)
   }) %>% 
     marrangeGrob(nrow =1, ncol=1) %>% 
     ggsave(str_c(outdir, "/00000_coordinates.pdf"), plot = ., width = OUTPUT_WIDTH, height = OUTPUT_HEIGHT)
@@ -266,7 +271,8 @@ server <- function(input, output, session) {
       combined_name <- str_c(file_path_sans_ext(name),"_ucsc.pdf")
       
       ## create pdf with table
-      export_table_as_pdf(datapath, pdfdir, input$need_annotations)
+      title_text <- str_glue("Session: {input$session}\nDB: {input$db}\nZoom: {input$zoom}x")
+      export_table_as_pdf(datapath, pdfdir, title_text, input$need_annotations)
 
       # load bed file
       bed <- read_data(datapath, pdfdir = paste0(pdfdir,"/"), as.numeric(input$zoom))
