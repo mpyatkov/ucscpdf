@@ -23,7 +23,8 @@
 - **Created**: 2026-03-17
 - **Schema**: spec-driven
 - **Description**: Adds Chromote-based session discovery to bypass UCSC Cloudflare CAPTCHA
-- **Tasks**: 1-5, 7.1-7.5 complete (remaining: 3.7, 6.1-6.9)
+- **Completed**: Tasks 1-5, 7.1-7.5 (core functionality, UI, error handling, documentation)
+- **Remaining**: Task 3.7 (viewport testing), Tasks 6.1-6.9 (testing and validation)
 
 ```
 openspec/changes/hybrid-session-selection/
@@ -39,19 +40,19 @@ openspec/changes/hybrid-session-selection/
 
 | Function | Location | Description |
 |----------|----------|-------------|
-| `get_session_names()` | app.R:38 | Chromote-based session list fetching after login |
-| `init_chromote()` | app.R:139 | Create authenticated UCSC session via Chromote |
-| `download_pdf_chromote()` | app.R:179 | Download PDF for a genomic region using Chromote |
-| `read_data()` | app.R:320 | Parse BED/XLSX files, generate coordinates |
-| `calculate_zoom_factor()` | app.R:295 | Expand region symmetrically around midpoint |
-| `export_table_as_pdf()` | app.R:307 | Generate PDF table with ggpubr |
+| `get_session_names()` | app.R:38 | Fetch UCSC session names via Chromote login, returns list with names and Chromote session |
+| `init_chromote()` | app.R:137 | Create authenticated UCSC session via Chromote for PDF downloads |
+| `download_pdf_chromote()` | app.R:190 | Download PDF for a genomic region using Chromote session |
+| `read_data()` | app.R:320 | Parse BED/XLSX files, generate genomic coordinates |
+| `calculate_zoom_factor()` | app.R:259 | Expand genomic region symmetrically around midpoint by zoom factor |
+| `export_table_as_pdf()` | app.R:271 | Generate PDF table of coordinates with ggpubr |
 
 ## Dependencies
 
 ### R Packages
 - shiny, shinyjs, chromote
 - rvest, httr
-- qpdf, readxl, ggpubr, ggplot2, cowplot, gridExtra
+- qpdf, readxl, tools, ggpubr, ggplot2, cowplot, gridExtra
 - dplyr, purrr, stringr, readr
 
 ### System Requirements
