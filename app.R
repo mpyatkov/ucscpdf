@@ -5,11 +5,8 @@ library(shinyjs)
 library(qpdf)
 library(readxl)
 library(tools)
-library(ggpubr)
-library(ggplot2)
 library(gridExtra)
 library(grid)
-library(cowplot)
 library(stringr)
 library(purrr)
 library(dplyr)
@@ -17,11 +14,6 @@ library(readr)
 library(chromote)
 
 # Helper operator for NULL handling
-`%||%` <- function(x, y) if (is.null(x)) y else x
-
-## check dependecies for packages
-# packrat:::recursivePackageDependencies("ggpubr", ignore = "", lib.loc = .libPaths()[1])
-# rsconnect::appDependencies(appDir= "/projectnb/wax-dk/max/src/ucscpdf/")
 
 #' Fetch session names from UCSC Genome Browser
 #'
@@ -134,7 +126,24 @@ get_session_names <- function(username, password) {
 
 # init_chromote function - creates authenticated Chromote session for PDF download
 # example: init_chromote("ucsc_login", "password", "my_session", "hg38")
-init_chromote <- function(login, password, session_name, db) {
+# If existing_session is provided and valid, skip login and reuse it
+# This avoids duplicate authentication when session was already created by get_session_names()
+init_chromote <- function(login, password, session_name, db, existing_session = NULL) {
+  
+  # If existing session provided, reuse it (skip login)
+  if (!is.null(existing_session)) {
+    # Navigate to session URL using existing session
+    sessionUrl <- paste0("https://genome.ucsc.edu/s/", login, "/", session_name)
+    existing_session$go_to(sessionUrl)
+    Sys.sleep(3)
+    
+    # Build main_url for PDF downloads
+    main_url <- paste0("https://genome.ucsc.edu/cgi-bin/hgTracks?db=", db, "&position=")
+    
+    return(list(chrome = existing_session, main_url = main_url))
+  }
+  
+  # Otherwise, create new session and login
   b <- NULL
   
   tryCatch({
@@ -151,7 +160,7 @@ init_chromote <- function(login, password, session_name, db) {
       "(function() {
         document.querySelector('#userName').value = '%s';
         document.querySelector('#password').value = '%s';
-        document.querySelector('[name=\\\"hgLogin.do.displayLogin\\\"]').click();
+        document.querySelector('[name=\"hgLogin.do.displayLogin\"]').click();
         return 'submitted';
       })();",
       login, password
@@ -268,6 +277,8 @@ calculate_zoom_factor <- function(start, end, zoom){
 }
 
 ## read and save bed/xls as table
+# Note: Previously used ggpubr::ggtexttable() for table generation
+# Now using gridExtra::tableGrob() with grid graphics for lighter dependency footprint
 export_table_as_pdf <- function(file_path, outdir, title_text = "", add_annotations = TRUE){
   ## for bed file without colnames
   ## for xlsx should be header provided
@@ -305,14 +316,20 @@ export_table_as_pdf <- function(file_path, outdir, title_text = "", add_annotati
   r <- rep(1:ceiling(n/CHUNK_SIZE),each=CHUNK_SIZE)[1:n]
   dlist <- split(file_data,r)
 
-  map(dlist, function(chunk_table){
-    tab <- ggtexttable(chunk_table, rows = NULL, 
-                       theme = ttheme(base_size = 8, padding = unit(c(15, 3), "mm"))) %>% 
-      tab_add_title(text = title_text, face = "bold", size = 8, padding = unit(1, "line"))
-    cowplot::plot_grid(tab)
-  }) %>% 
-    marrangeGrob(nrow =1, ncol=1) %>% 
-    ggsave(str_c(outdir, "/00000_coordinates.pdf"), plot = ., width = OUTPUT_WIDTH, height = OUTPUT_HEIGHT)
+  # Create list of table grobs with titles using gridExtra and grid
+  grob_list <- map(dlist, function(chunk_table){
+    # Create table grob with theme
+    tab <- tableGrob(chunk_table, rows = NULL, theme = ttheme_minimal(base_size = 8))
+    # Add title using arrangeGrob
+    arrangeGrob(tab, top = textGrob(title_text, gp = gpar(fontface = "bold", fontsize = 8)))
+  })
+
+  # Create multi-page layout and save as PDF
+  grob_layout <- marrangeGrob(grob_list, nrow = 1, ncol = 1)
+  
+  pdf(str_c(outdir, "/00000_coordinates.pdf"), width = OUTPUT_WIDTH, height = OUTPUT_HEIGHT)
+  grid.draw(grob_layout)
+  dev.off()
 
 }
 
@@ -420,6 +437,11 @@ ui <- fluidPage(
 # Server part
 server <- function(input, output, session) {
   
+  # Reactive values to store Chromote session for reuse
+  # This avoids creating duplicate sessions - the session from get_session_names()
+  # is stored here and reused in init_chromote() via the existing_session parameter
+  rv <- reactiveValues(chrome_session = NULL)
+  
   have_key <- FALSE
   message <- ""
   buttonMessage <- "Extract pdfs"
@@ -488,10 +510,11 @@ server <- function(input, output, session) {
           duration = 5
         )
         message("Session fetch failed - check credentials or network")
-        # Reset session count display
+        # Reset session count display and clear stored session
         output$session_count <- renderText({
           "Error loading sessions"
         })
+        rv$chrome_session <- NULL
       } else if (length(sessions_result$names) == 0) {
         # No sessions found
         updateSelectInput(session, "session", choices = character(0))
@@ -503,8 +526,9 @@ server <- function(input, output, session) {
           type = "warning",
           duration = 5
         )
+        rv$chrome_session <- NULL
       } else {
-        # Success - update dropdown
+        # Success - update dropdown and store session
         setProgress(value = 1)
         updateSelectInput(session, "session", choices = sessions_result$names)
         output$session_count <- renderText({
@@ -515,6 +539,8 @@ server <- function(input, output, session) {
           type = "message",
           duration = 3
         )
+        # Store the Chromote session for reuse
+        rv$chrome_session <- sessions_result$chrome
       }
     })
     
@@ -545,35 +571,50 @@ server <- function(input, output, session) {
       dir.create(result_dir)  
     }
     
+    # Initialize Chromote session once before processing files
+    setProgress(message = 'Initializing session...', value = 0)
+    session_to_use <- rv$chrome_session
+    
+    # init Chromote session (will reuse if session_to_use is valid)
+    init_params <- init_chromote(input$login, input$password, str_trim(input$session), input$db, existing_session = session_to_use)
+    
+    # Fallback: if reuse failed, create new session
+    if (is.null(init_params)) {
+      message("Session reuse failed, creating new session")
+      init_params <- init_chromote(input$login, input$password, str_trim(input$session), input$db)
+    }
+    
+    if (is.null(init_params)) {
+      showNotification(
+        "Failed to initialize Chromote session. Please check credentials.",
+        type = "error",
+        duration = 5
+      )
+      shinyjs::show("downloadData")
+      shinyjs::toggle("go")
+      return()
+    }
+    
     ## walk through all bed/xls files
     pwalk(input$bedfile, function(name,size,type,datapath){
-
+      
       # tmp dir for pdf
       pdfdir <- tempfile("tmp", tmpdir = "./")
       if (!dir.exists(pdfdir)) {
         dir.create(pdfdir)  
       }
       pdfdir <- normalizePath(pdfdir)
-
+      
       # create name for combined pdf ex. tmp111111_combined.pdf
       combined_name <- str_c(file_path_sans_ext(name),"_ucsc.pdf")
       
       ## create pdf with table
       title_text <- str_glue("Session: {input$session}\nDB: {input$db}\nZoom: {input$zoom}x")
       export_table_as_pdf(datapath, pdfdir, title_text, input$need_annotations)
-
+      
       # load bed file
       bed <- read_data(datapath, pdfdir = paste0(pdfdir,"/"), as.numeric(input$zoom))
       withProgress(message = 'Downloading files',detail = str_c('Processing ',name), value = 0, {
-        
-        setProgress(detail = "Init session")
-        # init Chromote session
-        init_params <- init_chromote(input$login, input$password, str_trim(input$session), input$db)
-        
-        if (is.null(init_params)) {
-          setProgress(detail = "Session init failed")
-          stop("Failed to initialize Chromote session")
-        }
         
         # Number of times we'll go through the loop
         n <- nrow(bed)
@@ -586,15 +627,12 @@ server <- function(input, output, session) {
           download_pdf_chromote(init_params$chrome, correct_url, outname)
         }
         
-        # Close Chromote session after batch
-        tryCatch(init_params$chrome$close(), error = function(e) {})
-        
         setProgress(detail = "Combine pdf files to one")
         
         # combine all files
         pdffiles <- sort(list.files(pdfdir, pattern = "pdf", full.names = T))
         qpdf::pdf_combine(input = pdffiles, output = combined_name)
-
+        
         # remove tmp* directory with pdf files
         unlink(pdfdir, recursive = TRUE)
         
@@ -604,12 +642,22 @@ server <- function(input, output, session) {
       }) ## withProgress
       
     }) ## pwalk
-
+    
+    # Close Chromote session after all files processed
+    tryCatch({
+      if (!is.null(init_params$chrome)) {
+        init_params$chrome$close()
+        rv$chrome_session <- NULL  # Clear stored session
+      }
+    }, error = function(e) {
+      message("Error closing Chromote session: ", e$message)
+    })
+    
     ## make zip archive
     fnames_for_archive <- list.files(result_dir, full.names = T)
     zip_name <- str_c(result_dir,".zip")
     zip(zip_name, fnames_for_archive)
-
+    
     ## remove result_dir
     unlink(result_dir, recursive = TRUE) ## activate to remove result_dir
     
