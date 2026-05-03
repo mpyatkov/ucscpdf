@@ -12,7 +12,7 @@ library(purrr)
 library(dplyr)
 library(readr)
 library(chromote)
-
+#local_chrome_version("latest-stable", binary = "chrome")
 # Helper operator for NULL handling
 
 #' Fetch session names from UCSC Genome Browser
